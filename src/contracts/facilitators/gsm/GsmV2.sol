@@ -15,7 +15,7 @@ import {IGsmFeeStrategy} from './feeStrategy/interfaces/IGsmFeeStrategy.sol';
 import {IGsm} from './interfaces/IGsm.sol';
 /// NEW
 import {IPool} from 'aave-v3-core/contracts/interfaces/IPool.sol';
-/// NEW
+/// END NEW
 
 /**
  * @title GsmV2
@@ -74,7 +74,7 @@ contract GsmV2 is AccessControl, VersionedInitializable, EIP712, IGsm {
   /// NEW
   address public immutable UNDERLYING_ATOKEN;
   address public immutable POOL;
-  /// NEW
+  /// END NEW
 
   /**
    * @dev Require GSM to not be frozen for functions marked by this modifier
@@ -108,7 +108,7 @@ contract GsmV2 is AccessControl, VersionedInitializable, EIP712, IGsm {
     address pool,
     address priceStrategy
   ) EIP712('GSM', '2') {
-    /// NEW
+    /// END NEW
     require(ghoToken != address(0), 'ZERO_ADDRESS_NOT_VALID');
     require(underlyingAsset != address(0), 'ZERO_ADDRESS_NOT_VALID');
     require(
@@ -121,7 +121,7 @@ contract GsmV2 is AccessControl, VersionedInitializable, EIP712, IGsm {
 
     UNDERLYING_ATOKEN = underlyingAtoken;
     POOL = pool;
-    /// NEW
+    /// END NEW
 
     GHO_TOKEN = ghoToken;
     UNDERLYING_ASSET = underlyingAsset;
@@ -142,14 +142,12 @@ contract GsmV2 is AccessControl, VersionedInitializable, EIP712, IGsm {
     require(admin != address(0), 'ZERO_ADDRESS_NOT_VALID');
     _grantRole(DEFAULT_ADMIN_ROLE, admin);
     _grantRole(CONFIGURATOR_ROLE, admin);
-
     _updateGhoTreasury(ghoTreasury);
     _updateExposureCap(exposureCap);
-
     /// NEW
     IERC20(UNDERLYING_ASSET).approve(POOL, type(uint256).max);
     IERC20(UNDERLYING_ATOKEN).approve(POOL, type(uint256).max);
-    /// NEW
+    /// END NEW
   }
 
   /// @inheritdoc IGsm
@@ -229,19 +227,15 @@ contract GsmV2 is AccessControl, VersionedInitializable, EIP712, IGsm {
       uint256 rescuableBalance = IERC20(token).balanceOf(address(this)) - _accruedFees;
       require(rescuableBalance >= amount, 'INSUFFICIENT_GHO_TO_RESCUE');
     }
-    if (token == UNDERLYING_ASSET) {
-      /// NEW
-      uint256 aTokenBalance = IERC20(UNDERLYING_ATOKEN).balanceOf(address(this));
-      uint256 underlyingBalance = IERC20(token).balanceOf(address(this));
-
-      uint256 rescuableBalance = (aTokenBalance + underlyingBalance) - _currentExposure;
+    /// NEW
+    if (token == UNDERLYING_ATOKEN) {
+      /// _currentExposure + 1 to account for off-by-one precision problems
+      /// errors on the side of the GSM backing
+      uint256 rescuableBalance = IERC20(UNDERLYING_ATOKEN).balanceOf(address(this)) -
+        (_currentExposure + 1);
       require(rescuableBalance >= amount, 'INSUFFICIENT_EXOGENOUS_ASSET_TO_RESCUE');
-
-      if (underlyingBalance < amount) {
-        IPool(POOL).withdraw(token, amount - underlyingBalance, address(this));
-      }
-      /// NEW
     }
+    /// END NEW
     IERC20(token).safeTransfer(to, amount);
     emit TokensRescued(token, to, amount);
   }
@@ -264,21 +258,15 @@ contract GsmV2 is AccessControl, VersionedInitializable, EIP712, IGsm {
     _updateExposureCap(0);
 
     (, uint256 ghoMinted) = IGhoToken(GHO_TOKEN).getFacilitatorBucket(address(this));
-    uint256 underlyingBalance = IERC20(UNDERLYING_ASSET).balanceOf(address(this));
-    if (underlyingBalance > 0) {
-      IERC20(UNDERLYING_ASSET).safeTransfer(_ghoTreasury, underlyingBalance);
-    }
     /// NEW
     uint256 aTokenBalance = IERC20(UNDERLYING_ATOKEN).balanceOf(address(this));
     if (aTokenBalance > 0) {
       IERC20(UNDERLYING_ATOKEN).safeTransfer(_ghoTreasury, aTokenBalance);
     }
 
-    uint256 combinedBalance = underlyingBalance + aTokenBalance;
-
-    emit Seized(msg.sender, _ghoTreasury, combinedBalance, ghoMinted);
-    return combinedBalance;
-    /// NEW
+    emit Seized(msg.sender, _ghoTreasury, aTokenBalance, ghoMinted);
+    return aTokenBalance;
+    /// END NEW
   }
 
   /// @inheritdoc IGsm
@@ -318,14 +306,19 @@ contract GsmV2 is AccessControl, VersionedInitializable, EIP712, IGsm {
   }
   /// NEW
   /// Could make sense to merge this code into the function above
-  function harvestYieldToTreasury() public {
-    uint256 aTokenBalance = IERC20(UNDERLYING_ASSET).balanceOf(address(this));
-    IERC20(UNDERLYING_ATOKEN).transfer(_ghoTreasury, (aTokenBalance - _currentExposure));
-    aTokenBalance = IERC20(UNDERLYING_ASSET).balanceOf(address(this));
-    /// might not be required
-    require(aTokenBalance >= _currentExposure);
+  /// also possible to make this function permissioned by adding a harvester role
+  function distributeYieldToTreasury() public {
+    /// _currentExposure + 1 to account for off-by-one precision problems
+    /// errors on the side of the GSM backing
+    uint256 currentExposure = _currentExposure + 1;
+    uint256 aTokenBalance = IERC20(UNDERLYING_ATOKEN).balanceOf(address(this));
+    if (aTokenBalance > currentExposure) {
+      uint256 accruedFees = aTokenBalance - currentExposure;
+      IERC20(UNDERLYING_ATOKEN).transfer(_ghoTreasury, accruedFees);
+      emit FeesDistributedToTreasury(_ghoTreasury, UNDERLYING_ATOKEN, accruedFees);
+    }
   }
-  /// NEW
+  /// END NEW
 
   /// @inheritdoc IGhoFacilitator
   function updateGhoTreasury(address newGhoTreasury) external override onlyRole(CONFIGURATOR_ROLE) {
@@ -436,7 +429,7 @@ contract GsmV2 is AccessControl, VersionedInitializable, EIP712, IGsm {
   function GSM_REVISION() public pure virtual override returns (uint256) {
     /// NEW
     return 2;
-    /// NEW
+    /// END NEW
   }
 
   /**
@@ -471,7 +464,7 @@ contract GsmV2 is AccessControl, VersionedInitializable, EIP712, IGsm {
 
     /// NEW
     IPool(POOL).withdraw(UNDERLYING_ASSET, assetAmount, address(this));
-    /// NEW
+    /// END NEW
 
     IERC20(UNDERLYING_ASSET).safeTransfer(receiver, assetAmount);
 
@@ -523,7 +516,7 @@ contract GsmV2 is AccessControl, VersionedInitializable, EIP712, IGsm {
     /// NEW
     uint256 underlyingBalance = IERC20(UNDERLYING_ASSET).balanceOf(address(this));
     IPool(POOL).deposit(UNDERLYING_ASSET, underlyingBalance, address(this), 0);
-    /// NEW
+    /// END NEW
 
     emit SellAsset(originator, receiver, assetAmount, grossAmount, fee);
     return (assetAmount, ghoBought);
