@@ -32,9 +32,9 @@ To reduce new storage footpring, the underlying Atoken address could be fetched 
 
 All modifications to the original Gsm implementation are between `/// NEW` and `/// END NEW` blocks.
 
-GSM diff: https://www.diffchecker.com/u0fo7Mg9/
+GSM diff: https://www.diffchecker.com/BN0AjFp1/
 
-Test diff: https://www.diffchecker.com/oJOuEPxz/
+Test diff: https://www.diffchecker.com/MKwP7igX/
 
 ### Storage variables
 
@@ -70,13 +70,17 @@ We introduce two new constructor params in this new version to assign the new st
 ```
 
 **initialize**:
-To allow the GSM to deposit and withdraw from the pool at will, we add two maximum approvals to both the underlying token and the respective Atoken.
+
+To allow the GSM to deposit and withdraw from the pool at will, we add two maximum approvals to both the underlying token and the respective Atoken. These approvals could be made on the fly before deposit/withdraw to prevent hanging approvals.
 
 ```
-  IERC20(UNDERLYING_ASSET).approve(POOL, type(uint256).max);IERC20(UNDERLYING_ATOKEN).approve(POOL, type(uint256).max);
+  IERC20(UNDERLYING_ASSET).approve(POOL, type(uint256).max);
+
+  IERC20(UNDERLYING_ATOKEN).approve(POOL, type(uint256).max);
 ```
 
 **rescueTokens**:
+
 Since the underlying now sits in aTokens, we change the logic of rescuing the underlying to target the aToken.
 
 ```
@@ -91,6 +95,7 @@ if (token == UNDERLYING_ATOKEN) {
 Due to rounding errors present in aTokens, we add a single unit to the `_currentExposure` to err on the side of the GSM backing.
 
 **seize**:
+
 The seize function also changes the target from the underlying token to the aToken.
 
 ```
@@ -111,7 +116,16 @@ We bump the version number from `1` to `2`.
 return 2;
 ```
 
+**getAvailableLiquidity**:
+
+We subtract 1 from the current exposure as a quality of life improvement, once again to account to rounding errors.
+
+```
+    return _currentExposure != 0 ? (_currentExposure - 1) : _currentExposure;
+```
+
 **\_buyAsset**:
+
 In this function we add a single line of code to withdraw the necessary underlying from the Pool before we transfer the underlying to the user.
 
 ```
@@ -121,8 +135,13 @@ IPool(POOL).withdraw(UNDERLYING_ASSET, assetAmount, address(this));
 **\_sellAsset**:
 
 In this function we query the current underlying balance of the GSM and deposit all underlying into the pool.
+We also subtract 1 from the current exposure to account for rounding errors in aTokens.
 
 ```
+    require(_currentExposure - 1 >= assetAmount, 'INSUFFICIENT_AVAILABLE_EXOGENOUS_ASSET_LIQUIDITY');
+
+    (...)
+
     uint256 underlyingBalance = IERC20(UNDERLYING_ASSET).balanceOf(address(this));
     IPool(POOL).deposit(UNDERLYING_ASSET, underlyingBalance, address(this), 0);
 ```

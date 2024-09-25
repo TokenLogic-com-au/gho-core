@@ -10,8 +10,9 @@ import {TransparentUpgradeableProxy} from 'solidity-utils/contracts/transparent-
 import {ProxyAdmin} from 'solidity-utils/contracts/transparent-proxy/ProxyAdmin.sol';
 import {PercentageMath} from '@aave/core-v3/contracts/protocol/libraries/math/PercentageMath.sol';
 import {IERC20} from 'aave-stk-v1-5/src/interfaces/IERC20.sol';
-import {AToken} from 'aave-v3-core/contracts/protocol/tokenization/AToken.sol';
 import {AaveV3Ethereum, AaveV3EthereumAssets} from 'aave-address-book/AaveV3Ethereum.sol';
+import {GovernanceV3Ethereum} from 'aave-address-book/GovernanceV3Ethereum.sol';
+import {MiscEthereum} from 'aave-address-book/MiscEthereum.sol';
 
 import {FixedPriceStrategy} from '../contracts/facilitators/gsm/priceStrategy/FixedPriceStrategy.sol';
 import {FixedFeeStrategy} from '../contracts/facilitators/gsm/feeStrategy/FixedFeeStrategy.sol';
@@ -26,53 +27,61 @@ contract TestGsmV2 is Test, Events {
   using PercentageMath for uint256;
   using PercentageMath for uint128;
 
+  GsmV2 internal GHO_GSM;
+
   address internal gsmSignerAddr;
   uint256 internal gsmSignerKey;
 
-  GhoToken internal GHO_TOKEN = GhoToken(AaveV3EthereumAssets.GHO_UNDERLYING);
+  SampleSwapFreezer internal GHO_GSM_SWAP_FREEZER;
+  SampleLiquidator internal GHO_GSM_LAST_RESORT_LIQUIDATOR;
+
   IERC20 internal USDC_TOKEN = IERC20(AaveV3EthereumAssets.USDC_UNDERLYING);
-  IERC20 internal WETH = IERC20(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
+  IERC20 internal WETH = IERC20(AaveV3EthereumAssets.WETH_UNDERLYING);
+  GhoToken internal GHO_TOKEN = GhoToken(AaveV3EthereumAssets.GHO_UNDERLYING);
   address internal USDC_ATOKEN = AaveV3EthereumAssets.USDC_A_TOKEN;
   address internal POOL = address(AaveV3Ethereum.POOL);
+  address internal PROXY_ADMIN_OWNER = address(GovernanceV3Ethereum.EXECUTOR_LVL_1);
+  address internal TREASURY = address(AaveV3Ethereum.COLLECTOR);
 
-  ProxyAdmin internal OLD_GSM_PROXY_ADMIN = ProxyAdmin(0xD3cF979e676265e4f6379749DECe4708B9A22476);
-  address internal proxyAdminOwner = 0x5300A1a15135EA4dc7aD5a167152C01EFc9b192A;
-  Gsm internal OLD_GSM = Gsm(0x0d8eFfC11dF3F229AA1EA0509BC9DFa632A13578);
-  GsmV2 internal GHO_GSM;
+  // https://etherscan.io/address/0x0d8eFfC11dF3F229AA1EA0509BC9DFa632A13578
+  Gsm internal constant OLD_GSM = Gsm(0x0d8eFfC11dF3F229AA1EA0509BC9DFa632A13578);
 
-  FixedPriceStrategy internal GHO_GSM_FIXED_PRICE_STRATEGY =
+  /// https://etherscan.io/address/0xD3cF979e676265e4f6379749DECe4708B9A22476
+  ProxyAdmin internal constant GSM_PROXY_ADMIN =
+    ProxyAdmin(0xD3cF979e676265e4f6379749DECe4708B9A22476);
+
+  /// https://etherscan.io/address/0x430BEdcA5DfA6f94d1205Cb33AB4f008D0d9942a
+  FixedPriceStrategy internal constant GHO_GSM_FIXED_PRICE_STRATEGY =
     FixedPriceStrategy(0x430BEdcA5DfA6f94d1205Cb33AB4f008D0d9942a);
-  FixedFeeStrategy internal GHO_GSM_FIXED_FEE_STRATEGY =
+
+  /// https://etherscan.io/address/0x83896a35db4519BD8CcBAF5cF86CCA61b5cfb938
+  FixedFeeStrategy internal constant GHO_GSM_FIXED_FEE_STRATEGY =
     FixedFeeStrategy(0x83896a35db4519BD8CcBAF5cF86CCA61b5cfb938);
 
   /// taken from Constants.sol
-  bytes32 internal DEFAULT_ADMIN_ROLE = bytes32(0);
-  bytes32 public constant GSM_CONFIGURATOR_ROLE = keccak256('CONFIGURATOR_ROLE');
-  bytes32 public constant GSM_TOKEN_RESCUER_ROLE = keccak256('TOKEN_RESCUER_ROLE');
-  bytes32 public constant GSM_SWAP_FREEZER_ROLE = keccak256('SWAP_FREEZER_ROLE');
-  bytes32 public constant GSM_LIQUIDATOR_ROLE = keccak256('LIQUIDATOR_ROLE');
-  bytes32 public constant GHO_TOKEN_FACILITATOR_MANAGER_ROLE =
+  bytes32 internal constant DEFAULT_ADMIN_ROLE = bytes32(0);
+  bytes32 internal constant GSM_CONFIGURATOR_ROLE = keccak256('CONFIGURATOR_ROLE');
+  bytes32 internal constant GSM_TOKEN_RESCUER_ROLE = keccak256('TOKEN_RESCUER_ROLE');
+  bytes32 internal constant GSM_SWAP_FREEZER_ROLE = keccak256('SWAP_FREEZER_ROLE');
+  bytes32 internal constant GSM_LIQUIDATOR_ROLE = keccak256('LIQUIDATOR_ROLE');
+  bytes32 internal constant GHO_TOKEN_FACILITATOR_MANAGER_ROLE =
     keccak256('FACILITATOR_MANAGER_ROLE');
-  SampleSwapFreezer GHO_GSM_SWAP_FREEZER;
-  SampleLiquidator GHO_GSM_LAST_RESORT_LIQUIDATOR;
-  uint128 constant DEFAULT_GSM_USDC_EXPOSURE = 100_000_000e6;
-  uint128 constant DEFAULT_GSM_USDC_AMOUNT = 100e6;
-  uint128 constant DEFAULT_GSM_GHO_AMOUNT = 100e18;
-  uint256 constant DEFAULT_GSM_SELL_FEE = 0.1e4; // 10%
-  uint256 constant DEFAULT_GSM_BUY_FEE = 0.1e4; // 10%
-  uint128 constant DEFAULT_CAPACITY = 100_000_000e18;
-  address constant ALICE = address(0x1111);
-  address constant BOB = address(0x1112);
-  address constant CHARLES = address(0x1113);
-
-  address internal TREASURY = address(AaveV3Ethereum.COLLECTOR);
+  uint128 internal constant DEFAULT_GSM_USDC_EXPOSURE = 100_000_000e6;
+  uint128 internal constant DEFAULT_GSM_USDC_AMOUNT = 100e6;
+  uint128 internal constant DEFAULT_GSM_GHO_AMOUNT = 100e18;
+  uint256 internal constant DEFAULT_GSM_SELL_FEE = 0.1e4; // 10%
+  uint256 internal constant DEFAULT_GSM_BUY_FEE = 0.1e4; // 10%
+  uint128 internal constant DEFAULT_CAPACITY = 100_000_000e18;
+  address internal constant ALICE = address(0x1111);
+  address internal constant BOB = address(0x1112);
+  address internal constant CHARLES = address(0x1113);
 
   // signature typehash for GSM
-  bytes32 public constant GSM_BUY_ASSET_WITH_SIG_TYPEHASH =
+  bytes32 internal constant GSM_BUY_ASSET_WITH_SIG_TYPEHASH =
     keccak256(
       'BuyAssetWithSig(address originator,uint256 minAmount,address receiver,uint256 nonce,uint256 deadline)'
     );
-  bytes32 public constant GSM_SELL_ASSET_WITH_SIG_TYPEHASH =
+  bytes32 internal constant GSM_SELL_ASSET_WITH_SIG_TYPEHASH =
     keccak256(
       'SellAssetWithSig(address originator,uint256 maxAmount,address receiver,uint256 nonce,uint256 deadline)'
     );
@@ -81,8 +90,11 @@ contract TestGsmV2 is Test, Events {
     vm.createSelectFork(vm.rpcUrl('mainnet'), 20814911);
     (gsmSignerAddr, gsmSignerKey) = makeAddrAndKey('gsmSigner');
 
+    GHO_GSM_SWAP_FREEZER = new SampleSwapFreezer();
+    GHO_GSM_LAST_RESORT_LIQUIDATOR = new SampleLiquidator();
+
     /// Deploy gsmV2 & upgrade current gsm impl
-    vm.startPrank(proxyAdminOwner);
+    vm.startPrank(PROXY_ADMIN_OWNER);
     GsmV2 gsm = new GsmV2(
       address(GHO_TOKEN),
       address(USDC_TOKEN),
@@ -90,7 +102,7 @@ contract TestGsmV2 is Test, Events {
       POOL,
       address(GHO_GSM_FIXED_PRICE_STRATEGY)
     );
-    OLD_GSM_PROXY_ADMIN.upgradeAndCall(
+    GSM_PROXY_ADMIN.upgradeAndCall(
       TransparentUpgradeableProxy(payable(address(OLD_GSM))),
       address(gsm),
       abi.encodeWithSelector(
@@ -100,12 +112,10 @@ contract TestGsmV2 is Test, Events {
         DEFAULT_GSM_USDC_EXPOSURE
       )
     );
-    GHO_GSM = GsmV2(address(OLD_GSM));
     GHO_TOKEN.grantRole(GHO_TOKEN_FACILITATOR_MANAGER_ROLE, address(this));
     vm.stopPrank();
 
-    GHO_GSM_SWAP_FREEZER = new SampleSwapFreezer();
-    GHO_GSM_LAST_RESORT_LIQUIDATOR = new SampleLiquidator();
+    GHO_GSM = GsmV2(address(OLD_GSM));
     GHO_GSM.grantRole(GSM_SWAP_FREEZER_ROLE, address(GHO_GSM_SWAP_FREEZER));
     GHO_GSM.grantRole(GSM_LIQUIDATOR_ROLE, address(GHO_GSM_LAST_RESORT_LIQUIDATOR));
 
@@ -127,7 +137,7 @@ contract TestGsmV2 is Test, Events {
     GHO_GSM.buyAsset(DEFAULT_GSM_USDC_AMOUNT, BOB);
     vm.stopPrank();
 
-    /// add some yield to GSM
+    /// add some more yield to GSM
     simulateAusdcYield(300e6);
 
     // Sell some assets
@@ -161,6 +171,34 @@ contract TestGsmV2 is Test, Events {
     GHO_TOKEN.approve(address(GHO_GSM), DEFAULT_GSM_GHO_AMOUNT);
     GHO_GSM.buyAsset(DEFAULT_GSM_USDC_AMOUNT, BOB);
     vm.stopPrank();
+  }
+
+  function test_drainAllUsdc() public {
+    GHO_GSM.updateFeeStrategy(address(0));
+    uint256 maxUsdcAmount = GHO_GSM.getAvailableLiquidity();
+    uint256 maxGhoAmount = GHO_GSM_FIXED_PRICE_STRATEGY.getAssetPriceInGho(maxUsdcAmount, true);
+
+    mintGho(BOB, maxGhoAmount);
+    vm.startPrank(BOB);
+    GHO_TOKEN.approve(address(GHO_GSM), maxGhoAmount);
+    GHO_GSM.buyAsset(maxUsdcAmount, BOB);
+    vm.stopPrank();
+
+    assertEq(IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM)), 0);
+  }
+
+  function test_drainMaxGho() public {
+    uint256 amount = GHO_GSM.getAvailableUnderlyingExposure();
+    (uint256 ghoCapacity, ) = GHO_TOKEN.getFacilitatorBucket(address(GHO_GSM));
+
+    /// increase bucket capacity
+    uint256 ghoAmount = GHO_GSM_FIXED_PRICE_STRATEGY.getAssetPriceInGho(amount, true);
+    vm.prank(PROXY_ADMIN_OWNER);
+    GHO_TOKEN.setFacilitatorBucketCapacity(address(GHO_GSM), uint128(ghoCapacity + ghoAmount));
+
+    _sellAsset(GHO_GSM, USDC_TOKEN, ALICE, amount);
+
+    assertEq(IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM)), GHO_GSM.getAvailableLiquidity());
   }
 
   function testConstructor() public {
@@ -596,7 +634,7 @@ contract TestGsmV2 is Test, Events {
       address(GHO_GSM_FIXED_PRICE_STRATEGY)
     );
     gsm.initialize(address(this), TREASURY, DEFAULT_GSM_USDC_EXPOSURE);
-    vm.prank(proxyAdminOwner);
+    vm.prank(PROXY_ADMIN_OWNER);
     GHO_TOKEN.addFacilitator(address(gsm), 'GSM Modified Bucket Cap', DEFAULT_CAPACITY - 1);
     uint256 defaultCapInUsdc = DEFAULT_CAPACITY / (10 ** (18 - 6));
 
@@ -618,7 +656,7 @@ contract TestGsmV2 is Test, Events {
       address(GHO_GSM_FIXED_PRICE_STRATEGY)
     );
     gsm.initialize(address(this), TREASURY, DEFAULT_GSM_USDC_EXPOSURE - 1);
-    vm.prank(proxyAdminOwner);
+    vm.prank(PROXY_ADMIN_OWNER);
     GHO_TOKEN.addFacilitator(address(gsm), 'GSM Modified Exposure Cap', DEFAULT_CAPACITY);
 
     mintUsdc(ALICE, DEFAULT_GSM_USDC_EXPOSURE);
@@ -660,7 +698,6 @@ contract TestGsmV2 is Test, Events {
   }
 
   function testGetGhoAmountForSellAssetWithZeroFee() public {
-    vm.prank(proxyAdminOwner);
     GHO_GSM.updateFeeStrategy(address(0));
 
     (uint256 exactAssetAmount, uint256 ghoBought, uint256 grossAmount, uint256 fee) = GHO_GSM
@@ -707,7 +744,6 @@ contract TestGsmV2 is Test, Events {
   function testBuyAssetZeroFee() public {
     vm.expectEmit(true, true, false, true, address(GHO_GSM));
     emit FeeStrategyUpdated(address(GHO_GSM_FIXED_FEE_STRATEGY), address(0));
-    vm.prank(proxyAdminOwner);
     GHO_GSM.updateFeeStrategy(address(0));
 
     // Supply assets to the GSM first
@@ -1551,13 +1587,7 @@ contract TestGsmV2 is Test, Events {
   function testRevertRescueUnderlyingTokens() public {
     GHO_GSM.grantRole(GSM_TOKEN_RESCUER_ROLE, address(this));
 
-    //uint256 rescuableBalance = IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM)) - GHO_GSM.getAvailableLiquidity();
-    IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM));
-    AToken(USDC_ATOKEN).scaledBalanceOf(address(GHO_GSM));
-    USDC_TOKEN.balanceOf(address(GHO_GSM));
-    GHO_GSM.getAvailableLiquidity();
-
-    /// give a lil bit of extra Atoken to the GSM to simulate yield
+    /// give a lil bit of extra Atoken to the GSM to simulate yield or donation
     simulateAusdcYield(10e6);
 
     vm.expectRevert('INSUFFICIENT_EXOGENOUS_ASSET_TO_RESCUE');

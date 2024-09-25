@@ -392,7 +392,9 @@ contract GsmV2 is AccessControl, VersionedInitializable, EIP712, IGsm {
 
   /// @inheritdoc IGsm
   function getAvailableLiquidity() external view returns (uint256) {
-    return _currentExposure;
+    /// NEW
+    return _currentExposure != 0 ? (_currentExposure - 1) : _currentExposure;
+    /// END NEW
   }
 
   /// @inheritdoc IGsm
@@ -455,7 +457,12 @@ contract GsmV2 is AccessControl, VersionedInitializable, EIP712, IGsm {
     _beforeBuyAsset(originator, assetAmount, receiver);
 
     require(assetAmount > 0, 'INVALID_AMOUNT');
-    require(_currentExposure >= assetAmount, 'INSUFFICIENT_AVAILABLE_EXOGENOUS_ASSET_LIQUIDITY');
+    /// NEW
+    require(
+      _currentExposure - 1 >= assetAmount,
+      'INSUFFICIENT_AVAILABLE_EXOGENOUS_ASSET_LIQUIDITY'
+    );
+    /// END NEW
 
     _currentExposure -= uint128(assetAmount);
     _accruedFees += fee.toUint128();
