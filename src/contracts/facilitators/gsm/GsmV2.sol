@@ -145,8 +145,13 @@ contract GsmV2 is AccessControl, VersionedInitializable, EIP712, IGsm {
     _updateGhoTreasury(ghoTreasury);
     _updateExposureCap(exposureCap);
     /// NEW
-    IERC20(UNDERLYING_ASSET).approve(POOL, type(uint256).max);
     IERC20(UNDERLYING_ATOKEN).approve(POOL, type(uint256).max);
+    IERC20 underlying = IERC20(UNDERLYING_ASSET);
+    underlying.approve(POOL, type(uint256).max);
+    uint256 underlyingBalance = underlying.balanceOf(address(this));
+    if (underlyingBalance > 0) {
+      IPool(POOL).deposit(address(underlying), underlyingBalance, address(this), 0);
+    }
     /// END NEW
   }
 
@@ -392,9 +397,7 @@ contract GsmV2 is AccessControl, VersionedInitializable, EIP712, IGsm {
 
   /// @inheritdoc IGsm
   function getAvailableLiquidity() external view returns (uint256) {
-    /// NEW
-    return _currentExposure != 0 ? (_currentExposure - 1) : _currentExposure;
-    /// END NEW
+    return _currentExposure;
   }
 
   /// @inheritdoc IGsm
@@ -521,8 +524,7 @@ contract GsmV2 is AccessControl, VersionedInitializable, EIP712, IGsm {
     IGhoToken(GHO_TOKEN).transfer(receiver, ghoBought);
 
     /// NEW
-    uint256 underlyingBalance = IERC20(UNDERLYING_ASSET).balanceOf(address(this));
-    IPool(POOL).deposit(UNDERLYING_ASSET, underlyingBalance, address(this), 0);
+    IPool(POOL).deposit(UNDERLYING_ASSET, assetAmount, address(this), 0);
     /// END NEW
 
     emit SellAsset(originator, receiver, assetAmount, grossAmount, fee);
