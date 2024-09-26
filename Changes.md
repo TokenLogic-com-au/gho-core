@@ -2,11 +2,11 @@
 
 Forum post draft: https://hackmd.io/uuy0IHwuRtaNWfaL245cwg
 
-## TL;DR
+## Overview
 
-USDC is currently sitting idle, time to put it to work.
+Underlying is currently sitting idle in the GSM, time to put it to work.
 
-From now on, after the GSM receives USDC, it deposits the underlying into the Aave V3 Pool. Before the GSM sends USDC, it withdraws the required underlying from the Aave V3 Pool.
+From now on, after the GSM receives Underluing, it deposits the underlying into the Aave V3 Pool. Before the GSM sends Underlying, it withdraws the required amount from the Aave V3 Pool.
 
 GSM will also allow harvesting the yield from aave v3 pool back to the treasury.
 
@@ -14,7 +14,7 @@ Here's a quick sketch:
 
 ![diagram](https://i.imgur.com/wOp49Z8.png)
 
-## Implementation
+## Key Components
 
 This PR includes an proof of concept of the implementation for this new GSM.
 
@@ -40,7 +40,7 @@ Test diff: https://www.diffchecker.com/MKwP7igX/
 
 Two new storage variables are added in this implementation. Both aditions are pretty much self-explanatory.
 
-```
+```Solidity
   address public immutable UNDERLYING_ATOKEN;
   address public immutable POOL;
 ```
@@ -51,7 +51,7 @@ Two new storage variables are added in this implementation. Both aditions are pr
 
 We introduce two new constructor params in this new version to assign the new storage variables. We also bump the EIP712 version.
 
-```
+```Solidity
   constructor(
     address ghoToken,
     address underlyingAsset,
@@ -73,7 +73,7 @@ We introduce two new constructor params in this new version to assign the new st
 
 To allow the GSM to deposit and withdraw from the pool at will, we add two maximum approvals to both the underlying token and the respective Atoken. These approvals could be made on the fly before deposit/withdraw to prevent hanging approvals.
 
-```
+```Solidity
   IERC20(UNDERLYING_ASSET).approve(POOL, type(uint256).max);
 
   IERC20(UNDERLYING_ATOKEN).approve(POOL, type(uint256).max);
@@ -83,10 +83,8 @@ To allow the GSM to deposit and withdraw from the pool at will, we add two maxim
 
 Since the underlying now sits in aTokens, we change the logic of rescuing the underlying to target the aToken.
 
-```
+```Solidity
 if (token == UNDERLYING_ATOKEN) {
-      /// _currentExposure + 1 to account for off-by-one precision problems
-      /// errors on the side of the GSM backing
       uint256 rescuableBalance = IERC20(UNDERLYING_ATOKEN).balanceOf(address(this)) - (_currentExposure + 1);
       require(rescuableBalance >= amount, 'INSUFFICIENT_EXOGENOUS_ASSET_TO_RESCUE');
     }
@@ -98,7 +96,7 @@ Due to rounding errors present in aTokens, we add a single unit to the `_current
 
 The seize function also changes the target from the underlying token to the aToken.
 
-```
+```Solidity
     uint256 aTokenBalance = IERC20(UNDERLYING_ATOKEN).balanceOf(address(this));
     if (aTokenBalance > 0) {
       IERC20(UNDERLYING_ATOKEN).safeTransfer(_ghoTreasury, aTokenBalance);
@@ -112,7 +110,7 @@ The seize function also changes the target from the underlying token to the aTok
 
 We bump the version number from `1` to `2`.
 
-```
+```Solidity
 return 2;
 ```
 
@@ -120,7 +118,7 @@ return 2;
 
 We subtract 1 from the current exposure as a quality of life improvement, once again to account to rounding errors.
 
-```
+```Solidity
     return _currentExposure != 0 ? (_currentExposure - 1) : _currentExposure;
 ```
 
@@ -128,8 +126,8 @@ We subtract 1 from the current exposure as a quality of life improvement, once a
 
 In this function we add a single line of code to withdraw the necessary underlying from the Pool before we transfer the underlying to the user.
 
-```
-IPool(POOL).withdraw(UNDERLYING_ASSET, assetAmount, address(this));
+```Solidity
+  IPool(POOL).withdraw(UNDERLYING_ASSET, assetAmount, address(this));
 ```
 
 **\_sellAsset**:
@@ -137,7 +135,7 @@ IPool(POOL).withdraw(UNDERLYING_ASSET, assetAmount, address(this));
 In this function we query the current underlying balance of the GSM and deposit all underlying into the pool.
 We also subtract 1 from the current exposure to account for rounding errors in aTokens.
 
-```
+```Solidity
     require(_currentExposure - 1 >= assetAmount, 'INSUFFICIENT_AVAILABLE_EXOGENOUS_ASSET_LIQUIDITY');
 
     (...)
@@ -152,7 +150,7 @@ We also subtract 1 from the current exposure to account for rounding errors in a
 
 This function allows the treasury to collect the yield generated from the aTokens held.
 
-```
+```Solidity
   function distributeYieldToTreasury() public {
     uint256 currentExposure = _currentExposure + 1;
     uint256 aTokenBalance = IERC20(UNDERLYING_ATOKEN).balanceOf(address(this));
