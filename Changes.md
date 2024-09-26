@@ -176,4 +176,4 @@ Tests are still incomplete, but we have ported 100% of the existing GSM tests to
 
 On our test setup we (1) fork mainnet, (2) deploy the new implementation, (3) upgrade the current GSM to the new version.
 
-We also included a very simple test to cover the newly added function.
+We also included some simple tests to cover the newly added functionality.
