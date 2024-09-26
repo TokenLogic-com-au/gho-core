@@ -234,10 +234,7 @@ contract GsmV2 is AccessControl, VersionedInitializable, EIP712, IGsm {
     }
     /// NEW
     if (token == UNDERLYING_ATOKEN) {
-      /// _currentExposure + 1 to account for off-by-one precision problems
-      /// errors on the side of the GSM backing
-      uint256 rescuableBalance = IERC20(UNDERLYING_ATOKEN).balanceOf(address(this)) -
-        (_currentExposure + 1);
+      uint256 rescuableBalance = IERC20(UNDERLYING_ATOKEN).balanceOf(address(this)) - _currentExposure;
       require(rescuableBalance >= amount, 'INSUFFICIENT_EXOGENOUS_ASSET_TO_RESCUE');
     }
     /// END NEW
@@ -312,10 +309,8 @@ contract GsmV2 is AccessControl, VersionedInitializable, EIP712, IGsm {
   /// NEW
   /// Could make sense to merge this code into the function above
   /// also possible to make this function permissioned by adding a harvester role
-  function distributeYieldToTreasury() public {
-    /// _currentExposure + 1 to account for off-by-one precision problems
-    /// errors on the side of the GSM backing
-    uint256 currentExposure = _currentExposure + 1;
+  function distributeYieldToTreasury() external {
+    uint256 currentExposure = _currentExposure + 1e6;
     uint256 aTokenBalance = IERC20(UNDERLYING_ATOKEN).balanceOf(address(this));
     if (aTokenBalance > currentExposure) {
       uint256 accruedFees = aTokenBalance - currentExposure;
@@ -460,12 +455,7 @@ contract GsmV2 is AccessControl, VersionedInitializable, EIP712, IGsm {
     _beforeBuyAsset(originator, assetAmount, receiver);
 
     require(assetAmount > 0, 'INVALID_AMOUNT');
-    /// NEW
-    require(
-      _currentExposure - 1 >= assetAmount,
-      'INSUFFICIENT_AVAILABLE_EXOGENOUS_ASSET_LIQUIDITY'
-    );
-    /// END NEW
+    require(_currentExposure >= assetAmount, 'INSUFFICIENT_AVAILABLE_EXOGENOUS_ASSET_LIQUIDITY');
 
     _currentExposure -= uint128(assetAmount);
     _accruedFees += fee.toUint128();

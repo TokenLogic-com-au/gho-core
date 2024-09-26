@@ -61,6 +61,8 @@ contract TestGsmV2 is Test, Events {
   FixedFeeStrategy internal constant GHO_GSM_FIXED_FEE_STRATEGY =
     FixedFeeStrategy(0x83896a35db4519BD8CcBAF5cF86CCA61b5cfb938);
 
+  uint256 internal constant YIELD_AMOUNT = 100e6;
+
   /// taken from Constants.sol
   bytes32 internal constant DEFAULT_ADMIN_ROLE = bytes32(0);
   bytes32 internal constant GSM_CONFIGURATOR_ROLE = keccak256('CONFIGURATOR_ROLE');
@@ -121,12 +123,16 @@ contract TestGsmV2 is Test, Events {
     GHO_GSM = GsmV2(address(OLD_GSM));
     GHO_GSM.grantRole(GSM_SWAP_FREEZER_ROLE, address(GHO_GSM_SWAP_FREEZER));
     GHO_GSM.grantRole(GSM_LIQUIDATOR_ROLE, address(GHO_GSM_LAST_RESORT_LIQUIDATOR));
+
+    simulateAusdcYield(YIELD_AMOUNT);
   }
 
   /// this test shows how in the current implementation the atoken balance
   /// drifts away from the _currentExposure over multiple sales and buys
   /// TODO this might be a clue to a deeper underlying issue in the implementation
   function test_Upgrade() public {
+    assertEq(USDC_TOKEN.balanceOf(address(GHO_GSM)), 0);
+
     GHO_GSM.updateFeeStrategy(address(0));
 
     /// add some yield to GSM
@@ -148,8 +154,6 @@ contract TestGsmV2 is Test, Events {
     /// add some yield to GSM
     simulateAusdcYield(300e6);
 
-    assertEq(USDC_TOKEN.balanceOf(address(GHO_GSM)), 0);
-
     uint256 treasuryBalanceBefore = IERC20(USDC_ATOKEN).balanceOf(TREASURY);
     uint256 gsmBalanceBefore = IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM));
 
@@ -164,55 +168,43 @@ contract TestGsmV2 is Test, Events {
     assertEq(gsmLost, treasuryGained);
     assertGe(gsmBalanceAfter, GHO_GSM.getAvailableLiquidity());
 
-    /// loop with buy and sells to confirm the delta between
-    /// availableliquidity and atoken.balanceOf is always 1
-    for (uint256 i = 0; i < 10; i++) {
+    for (uint256 i = 0; i < 20; i++) {
       // Sell some assets
-      _sellAsset(GHO_GSM, USDC_TOKEN, address(0xb0b), DEFAULT_GSM_USDC_AMOUNT);
-      // assertEq(IAToken(USDC_ATOKEN).scaledBalanceOf(address(GHO_GSM)) - 1, GHO_GSM.getAvailableLiquidity());
+      _sellAsset(GHO_GSM, USDC_TOKEN, address(0xb0b), DEFAULT_GSM_USDC_AMOUNT+1000e6);
 
       // Buy some assets
-      // mintGho(BOB, DEFAULT_GSM_GHO_AMOUNT);
-      // vm.startPrank(BOB);
-      // GHO_TOKEN.approve(address(GHO_GSM), DEFAULT_GSM_GHO_AMOUNT);
-      // GHO_GSM.buyAsset(DEFAULT_GSM_USDC_AMOUNT, BOB);
-      // vm.stopPrank();
-      // assertEq(IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM)) - 1, GHO_GSM.getAvailableLiquidity());
+      mintGho(BOB, DEFAULT_GSM_GHO_AMOUNT);
+      vm.startPrank(BOB);
+      GHO_TOKEN.approve(address(GHO_GSM), DEFAULT_GSM_GHO_AMOUNT);
+      GHO_GSM.buyAsset(DEFAULT_GSM_USDC_AMOUNT, BOB);
+      vm.stopPrank();
 
       // Sell some assets
       _sellAsset(GHO_GSM, USDC_TOKEN, address(0xb0b), DEFAULT_GSM_USDC_AMOUNT);
-      // assertEq(IAToken(USDC_ATOKEN).scaledBalanceOf(address(GHO_GSM)) - 1, GHO_GSM.getAvailableLiquidity());
 
       // Sell some assets
       _sellAsset(GHO_GSM, USDC_TOKEN, address(0xb0b), DEFAULT_GSM_USDC_AMOUNT);
-      // assertEq(IAToken(USDC_ATOKEN).scaledBalanceOf(address(GHO_GSM)) - 1, GHO_GSM.getAvailableLiquidity());
 
       // Buy some assets
-      // mintGho(BOB, DEFAULT_GSM_GHO_AMOUNT);
-      // vm.startPrank(BOB);
-      // GHO_TOKEN.approve(address(GHO_GSM), DEFAULT_GSM_GHO_AMOUNT);
-      // GHO_GSM.buyAsset(DEFAULT_GSM_USDC_AMOUNT, BOB);
-      // vm.stopPrank();
-      // assertEq(IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM)) - 1, GHO_GSM.getAvailableLiquidity());
+      mintGho(BOB, DEFAULT_GSM_GHO_AMOUNT);
+      vm.startPrank(BOB);
+      GHO_TOKEN.approve(address(GHO_GSM), DEFAULT_GSM_GHO_AMOUNT);
+      GHO_GSM.buyAsset(DEFAULT_GSM_USDC_AMOUNT, BOB);
+      vm.stopPrank();
 
       // Buy some assets
-      // mintGho(BOB, DEFAULT_GSM_GHO_AMOUNT);
-      // vm.startPrank(BOB);
-      // GHO_TOKEN.approve(address(GHO_GSM), DEFAULT_GSM_GHO_AMOUNT);
-      // GHO_GSM.buyAsset(DEFAULT_GSM_USDC_AMOUNT, BOB);
-      // vm.stopPrank();
-      // assertEq(IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM)) - 1, GHO_GSM.getAvailableLiquidity());
+      mintGho(BOB, DEFAULT_GSM_GHO_AMOUNT);
+      vm.startPrank(BOB);
+      GHO_TOKEN.approve(address(GHO_GSM), DEFAULT_GSM_GHO_AMOUNT);
+      GHO_GSM.buyAsset(DEFAULT_GSM_USDC_AMOUNT, BOB);
+      vm.stopPrank();
 
       // Sell some assets
       _sellAsset(GHO_GSM, USDC_TOKEN, address(0xb0b), DEFAULT_GSM_USDC_AMOUNT);
-      assertEq(IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM)) - 1, GHO_GSM.getAvailableLiquidity());
+      assertGe(IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM)), GHO_GSM.getAvailableLiquidity());
     }
-    assertEq(USDC_TOKEN.balanceOf(address(GHO_GSM)), 0);
-  }
 
-  function test_drainAllUsdc() public {
-    GHO_GSM.updateFeeStrategy(address(0));
-    uint256 maxUsdcAmount = GHO_GSM.getAvailableLiquidity() - 1;
+    uint256 maxUsdcAmount = GHO_GSM.getAvailableLiquidity();
     uint256 maxGhoAmount = GHO_GSM_FIXED_PRICE_STRATEGY.getAssetPriceInGho(maxUsdcAmount, true);
 
     mintGho(BOB, maxGhoAmount);
@@ -221,7 +213,21 @@ contract TestGsmV2 is Test, Events {
     GHO_GSM.buyAsset(maxUsdcAmount, BOB);
     vm.stopPrank();
 
-    assertEq(IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM)), 1);
+    assertGe(IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM)), GHO_GSM.getAvailableLiquidity());
+  }
+
+  function test_drainAllUsdc() public {
+    GHO_GSM.updateFeeStrategy(address(0));
+    uint256 maxUsdcAmount = GHO_GSM.getAvailableLiquidity();
+    uint256 maxGhoAmount = GHO_GSM_FIXED_PRICE_STRATEGY.getAssetPriceInGho(maxUsdcAmount, true);
+
+    mintGho(BOB, maxGhoAmount);
+    vm.startPrank(BOB);
+    GHO_TOKEN.approve(address(GHO_GSM), maxGhoAmount);
+    GHO_GSM.buyAsset(maxUsdcAmount, BOB);
+    vm.stopPrank();
+
+    assertEq(IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM)), YIELD_AMOUNT);
   }
 
   function test_drainMaxGho() public {
@@ -235,7 +241,7 @@ contract TestGsmV2 is Test, Events {
 
     _sellAsset(GHO_GSM, USDC_TOKEN, ALICE, amount);
 
-    assertApproxEqAbs(IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM)), GHO_GSM.getAvailableLiquidity(), 1);
+    assertEq(IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM)), GHO_GSM.getAvailableLiquidity() + YIELD_AMOUNT);
   }
 
   function testConstructor() public {
@@ -355,7 +361,6 @@ contract TestGsmV2 is Test, Events {
 
   function testSellAssetZeroFee() public {
     uint256 aUsdcBalanceBefore = IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM));
-    uint256 usdcBalanceBefore = USDC_TOKEN.balanceOf(address(GHO_GSM));
 
     mintUsdc(ALICE, DEFAULT_GSM_USDC_AMOUNT);
 
@@ -371,12 +376,7 @@ contract TestGsmV2 is Test, Events {
     assertEq(ghoBought, DEFAULT_GSM_GHO_AMOUNT, 'Unexpected GHO amount bought');
     assertEq(assetAmount, DEFAULT_GSM_USDC_AMOUNT, 'Unexpected asset amount sold');
     assertEq(USDC_TOKEN.balanceOf(ALICE), 0, 'Unexpected Alice final USDC balance');
-    assertEq(USDC_TOKEN.balanceOf(address(GHO_GSM)), 0, 'Unexpected GSM final USDC balance');
-    assertApproxEqAbs(
-      aUsdcBalanceAfter,
-      aUsdcBalanceBefore + usdcBalanceBefore + DEFAULT_GSM_USDC_AMOUNT,
-      1
-    );
+    assertEq(aUsdcBalanceAfter, aUsdcBalanceBefore + DEFAULT_GSM_USDC_AMOUNT);
     assertEq(GHO_TOKEN.balanceOf(ALICE), DEFAULT_GSM_GHO_AMOUNT, 'Unexpected final GHO balance');
     assertEq(GHO_GSM.getExposureCap(), DEFAULT_GSM_USDC_EXPOSURE, 'Unexpected exposure capacity');
   }
@@ -1593,42 +1593,37 @@ contract TestGsmV2 is Test, Events {
     uint256 balanceBeforeSell = IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM));
 
     mintUsdc(ALICE, DEFAULT_GSM_USDC_AMOUNT);
-
     vm.startPrank(ALICE);
     USDC_TOKEN.approve(address(GHO_GSM), DEFAULT_GSM_USDC_AMOUNT);
     GHO_GSM.sellAsset(DEFAULT_GSM_USDC_AMOUNT, ALICE);
     vm.stopPrank();
 
+    assertEq(IERC20(USDC_ATOKEN).balanceOf(ALICE), 0, 'Unexpected target aUSDC balance before');
+
     uint256 currentGSMBalance = DEFAULT_GSM_USDC_AMOUNT + balanceBeforeSell;
-    assertApproxEqAbs(IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM)), currentGSMBalance, 1);
+    assertEq(IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM)), currentGSMBalance);
 
-    mintUsdc(address(GHO_GSM), DEFAULT_GSM_USDC_AMOUNT);
-    assertEq(
-      USDC_TOKEN.balanceOf(address(GHO_GSM)),
-      DEFAULT_GSM_USDC_AMOUNT,
-      'Unexpected GSM USDC balance before, post-mint'
-    );
-    assertEq(USDC_TOKEN.balanceOf(ALICE), 0, 'Unexpected target USDC balance before');
+    simulateAusdcYield(DEFAULT_GSM_USDC_AMOUNT);
+    assertEq(IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM)), currentGSMBalance + DEFAULT_GSM_USDC_AMOUNT);
+    uint256 expectedAmountOut = (DEFAULT_GSM_USDC_AMOUNT + YIELD_AMOUNT);
 
+    /// we need to rescue - 1 but alice still gets full amount ¯\_(ツ)_/¯
     vm.expectEmit(true, true, true, true, address(GHO_GSM));
-    emit TokensRescued(address(USDC_TOKEN), ALICE, DEFAULT_GSM_USDC_AMOUNT - 1);
-    GHO_GSM.rescueTokens(address(USDC_TOKEN), ALICE, DEFAULT_GSM_USDC_AMOUNT - 1);
-    assertApproxEqAbs(IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM)), currentGSMBalance, 1);
+    emit TokensRescued(address(USDC_ATOKEN), ALICE, expectedAmountOut - 1);
+    GHO_GSM.rescueTokens(address(USDC_ATOKEN), ALICE, expectedAmountOut - 1);
+    assertEq(IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM)), currentGSMBalance - YIELD_AMOUNT);
     assertEq(
-      USDC_TOKEN.balanceOf(ALICE),
-      DEFAULT_GSM_USDC_AMOUNT - 1,
-      'Unexpected target USDC balance after'
+      IERC20(USDC_ATOKEN).balanceOf(ALICE),
+      expectedAmountOut,
+      'Unexpected target aUSDC balance after'
     );
   }
 
   function testRevertRescueUnderlyingTokens() public {
     GHO_GSM.grantRole(GSM_TOKEN_RESCUER_ROLE, address(this));
 
-    /// give a lil bit of extra Atoken to the GSM to simulate yield or donation
-    simulateAusdcYield(10e6);
-
     vm.expectRevert('INSUFFICIENT_EXOGENOUS_ASSET_TO_RESCUE');
-    GHO_GSM.rescueTokens(address(USDC_ATOKEN), ALICE, 10e6 + 1);
+    GHO_GSM.rescueTokens(address(USDC_ATOKEN), ALICE, YIELD_AMOUNT + 1);
   }
 
   function testSeize() public {
@@ -1666,10 +1661,9 @@ contract TestGsmV2 is Test, Events {
 
     assertEq(GHO_GSM.getIsSeized(), true, 'Unexpected seize status after');
     assertEq(seizedAmount, gsmAusdcBalanceBefore, 'Unexpected seized amount');
-    assertApproxEqAbs(
+    assertEq(
       IERC20(USDC_ATOKEN).balanceOf(TREASURY),
-      gsmAusdcBalanceBefore + ausdcBalanceBefore,
-      1
+      gsmAusdcBalanceBefore + ausdcBalanceBefore
     );
     assertEq(GHO_GSM.getAvailableLiquidity(), 0, 'Unexpected available liquidity');
     assertEq(
@@ -1697,7 +1691,7 @@ contract TestGsmV2 is Test, Events {
 
     vm.prank(address(GHO_GSM_LAST_RESORT_LIQUIDATOR));
     uint256 seizedAmount = GHO_GSM.seize();
-    assertApproxEqAbs(seizedAmount, ausdcBalanceBefore + DEFAULT_GSM_USDC_AMOUNT, 1);
+    assertEq(seizedAmount, ausdcBalanceBefore + DEFAULT_GSM_USDC_AMOUNT);
 
     vm.expectRevert('GSM_SEIZED');
     GHO_GSM.buyAsset(DEFAULT_GSM_USDC_AMOUNT, ALICE);
@@ -1720,7 +1714,7 @@ contract TestGsmV2 is Test, Events {
 
     vm.prank(address(GHO_GSM_LAST_RESORT_LIQUIDATOR));
     uint256 seizedAmount = GHO_GSM.seize();
-    assertApproxEqAbs(seizedAmount, ausdcBalanceBefore + DEFAULT_GSM_USDC_AMOUNT, 1);
+    assertEq(seizedAmount, ausdcBalanceBefore + DEFAULT_GSM_USDC_AMOUNT);
 
     vm.expectRevert('FACILITATOR_BUCKET_LEVEL_NOT_ZERO');
     GHO_TOKEN.removeFacilitator(address(GHO_GSM));
@@ -1761,7 +1755,7 @@ contract TestGsmV2 is Test, Events {
 
     vm.prank(address(GHO_GSM_LAST_RESORT_LIQUIDATOR));
     uint256 seizedAmount = GHO_GSM.seize();
-    assertApproxEqAbs(seizedAmount, ausdcBalanceBefore + DEFAULT_GSM_USDC_AMOUNT, 1);
+    assertEq(seizedAmount, ausdcBalanceBefore + DEFAULT_GSM_USDC_AMOUNT);
 
     mintGho(address(GHO_GSM_LAST_RESORT_LIQUIDATOR), ghoMintedBefore + DEFAULT_GSM_GHO_AMOUNT + 1);
     vm.startPrank(address(GHO_GSM_LAST_RESORT_LIQUIDATOR));

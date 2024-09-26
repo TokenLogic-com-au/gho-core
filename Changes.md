@@ -26,15 +26,15 @@ A Harvester role could be added to restrict who can call `distributeYieldToTreas
 
 `distributeYieldToTreasury` & `distributeFeesToTreasury` functions could be merged into a single function
 
-To reduce new storage footpring, the underlying Atoken address could be fetched from pool config dinamically.
+To reduce new storage footprint, the underlying Atoken address could be fetched from pool config dinamically.
 
 ### Changes
 
 All modifications to the original Gsm implementation are between `/// NEW` and `/// END NEW` blocks.
 
-GSM diff: https://www.diffchecker.com/BN0AjFp1/
+GSM diff: https://www.diffchecker.com/NPZQTJKj/
 
-Test diff: https://www.diffchecker.com/MKwP7igX/
+Test diff: https://www.diffchecker.com/4eIOqZ6H/
 
 ### Storage variables
 
@@ -73,10 +73,16 @@ We introduce two new constructor params in this new version to assign the new st
 
 To allow the GSM to deposit and withdraw from the pool at will, we add two maximum approvals to both the underlying token and the respective Atoken. These approvals could be made on the fly before deposit/withdraw to prevent hanging approvals.
 
-```Solidity
-  IERC20(UNDERLYING_ASSET).approve(POOL, type(uint256).max);
+We also include the migration of the underlying to the aToken.
 
-  IERC20(UNDERLYING_ATOKEN).approve(POOL, type(uint256).max);
+```Solidity
+    IERC20(UNDERLYING_ATOKEN).approve(POOL, type(uint256).max);
+    IERC20 underlying = IERC20(UNDERLYING_ASSET);
+    underlying.approve(POOL, type(uint256).max);
+    uint256 underlyingBalance = underlying.balanceOf(address(this));
+    if (underlyingBalance > 0) {
+      IPool(POOL).deposit(address(underlying), underlyingBalance, address(this), 0);
+    }
 ```
 
 **rescueTokens**:
@@ -84,13 +90,11 @@ To allow the GSM to deposit and withdraw from the pool at will, we add two maxim
 Since the underlying now sits in aTokens, we change the logic of rescuing the underlying to target the aToken.
 
 ```Solidity
-if (token == UNDERLYING_ATOKEN) {
-      uint256 rescuableBalance = IERC20(UNDERLYING_ATOKEN).balanceOf(address(this)) - (_currentExposure + 1);
+    if (token == UNDERLYING_ATOKEN) {
+      uint256 rescuableBalance = IERC20(UNDERLYING_ATOKEN).balanceOf(address(this)) - _currentExposure;
       require(rescuableBalance >= amount, 'INSUFFICIENT_EXOGENOUS_ASSET_TO_RESCUE');
     }
 ```
-
-Due to rounding errors present in aTokens, we add a single unit to the `_currentExposure` to err on the side of the GSM backing.
 
 **seize**:
 
@@ -114,33 +118,19 @@ We bump the version number from `1` to `2`.
 return 2;
 ```
 
-**getAvailableLiquidity**:
-
-We subtract 1 from the current exposure as a quality of life improvement, once again to account to rounding errors.
-
-```Solidity
-    return _currentExposure != 0 ? (_currentExposure - 1) : _currentExposure;
-```
-
 **\_buyAsset**:
 
 In this function we add a single line of code to withdraw the necessary underlying from the Pool before we transfer the underlying to the user.
 
 ```Solidity
-  IPool(POOL).withdraw(UNDERLYING_ASSET, assetAmount, address(this));
+    IPool(POOL).withdraw(UNDERLYING_ASSET, assetAmount, address(this));
 ```
 
 **\_sellAsset**:
 
 In this function we query the current underlying balance of the GSM and deposit all underlying into the pool.
-We also subtract 1 from the current exposure to account for rounding errors in aTokens.
 
 ```Solidity
-    require(_currentExposure - 1 >= assetAmount, 'INSUFFICIENT_AVAILABLE_EXOGENOUS_ASSET_LIQUIDITY');
-
-    (...)
-
-    uint256 underlyingBalance = IERC20(UNDERLYING_ASSET).balanceOf(address(this));
     IPool(POOL).deposit(UNDERLYING_ASSET, underlyingBalance, address(this), 0);
 ```
 
@@ -151,22 +141,22 @@ We also subtract 1 from the current exposure to account for rounding errors in a
 This function allows the treasury to collect the yield generated from the aTokens held.
 
 ```Solidity
-  function distributeYieldToTreasury() public {
-    uint256 currentExposure = _currentExposure + 1;
-    uint256 aTokenBalance = IERC20(UNDERLYING_ATOKEN).balanceOf(address(this));
-    if (aTokenBalance > currentExposure) {
+    function distributeYieldToTreasury() external {
+      uint256 currentExposure = _currentExposure + 1e6;
+      uint256 aTokenBalance = IERC20(UNDERLYING_ATOKEN).balanceOf(address(this));
+      if (aTokenBalance > currentExposure) {
         uint256 accruedFees = aTokenBalance - currentExposure;
         IERC20(UNDERLYING_ATOKEN).transfer(_ghoTreasury, accruedFees);
         emit FeesDistributedToTreasury(_ghoTreasury, UNDERLYING_ATOKEN, accruedFees);
+      }
     }
-  }
 ```
 
-Once again, due to rounding errors present in aTokens, we add a single unit to the `_currentExposure` to err on the side of the GSM backing.
+We leave 1 aUSDC in the contract to make sure no rounding errors occur if a swap is made immediately after the yield gets distributed.
 
 ## Security Considerations
 
-When updating from the previous version of the GSM, it's recommended to atomically bundle a `initialize` and a `sellAsset` call. This makes sure the GSM holds the aToken vs. the underlying, by deploying all the previous USDC held in the GSM to the POOL.
+When updating from the previous version of the GSM, it's recommended to atomically bundle the `initialize` call with a `transfer` of some aToken to the GSM. This makes sure the GSM holds aToken more than the `_currentExposure`, and allows users to safely use the GSM in the same block. This problem only exists when `_currentExposure == aToken.balanceOf(GSM)`, at time/block = 0. As time and blocks increase the `_curentExposure` will always be less than `aToken.balanceOf(GSM)`;
 
 ## Tests
 
