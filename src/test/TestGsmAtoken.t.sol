@@ -19,18 +19,18 @@ import {FixedPriceStrategy} from '../contracts/facilitators/gsm/priceStrategy/Fi
 import {FixedFeeStrategy} from '../contracts/facilitators/gsm/feeStrategy/FixedFeeStrategy.sol';
 import {SampleSwapFreezer} from '../contracts/facilitators/gsm/misc/SampleSwapFreezer.sol';
 import {SampleLiquidator} from '../contracts/facilitators/gsm/misc/SampleLiquidator.sol';
-import {GsmV2} from '../contracts/facilitators/gsm/GsmV2.sol';
+import {GsmAtoken} from '../contracts/facilitators/gsm/GsmAtoken.sol';
 import {Gsm} from '../contracts/facilitators/gsm/Gsm.sol';
 import {GhoToken} from '../contracts/gho/GhoToken.sol';
 import {Events} from './helpers/Events.sol';
 
 
-/// to run this test: forge test --match-path src/test/TestGsmV2.t.sol -vv
-contract TestGsmV2 is Test, Events {
+/// to run this test: forge test --match-path src/test/TestGsmAtoken.t.sol -vv
+contract TestGsmAtoken is Test, Events {
   using PercentageMath for uint256;
   using PercentageMath for uint128;
 
-  GsmV2 internal GHO_GSM;
+  GsmAtoken internal GHO_GSM;
 
   address internal gsmSignerAddr;
   uint256 internal gsmSignerKey;
@@ -98,9 +98,9 @@ contract TestGsmV2 is Test, Events {
     GHO_GSM_SWAP_FREEZER = new SampleSwapFreezer();
     GHO_GSM_LAST_RESORT_LIQUIDATOR = new SampleLiquidator();
 
-    /// Deploy gsmV2 & upgrade current gsm impl
+    /// Deploy GsmAtoken & upgrade current gsm impl
     vm.startPrank(PROXY_ADMIN_OWNER);
-    GsmV2 gsm = new GsmV2(
+    GsmAtoken gsm = new GsmAtoken(
       address(GHO_TOKEN),
       address(USDC_TOKEN),
       USDC_ATOKEN,
@@ -120,16 +120,13 @@ contract TestGsmV2 is Test, Events {
     GHO_TOKEN.grantRole(GHO_TOKEN_FACILITATOR_MANAGER_ROLE, address(this));
     vm.stopPrank();
 
-    GHO_GSM = GsmV2(address(OLD_GSM));
+    GHO_GSM = GsmAtoken(address(OLD_GSM));
     GHO_GSM.grantRole(GSM_SWAP_FREEZER_ROLE, address(GHO_GSM_SWAP_FREEZER));
     GHO_GSM.grantRole(GSM_LIQUIDATOR_ROLE, address(GHO_GSM_LAST_RESORT_LIQUIDATOR));
 
     simulateAusdcYield(YIELD_AMOUNT);
   }
 
-  /// this test shows how in the current implementation the atoken balance
-  /// drifts away from the _currentExposure over multiple sales and buys
-  /// TODO this might be a clue to a deeper underlying issue in the implementation
   function test_Upgrade() public {
     assertEq(USDC_TOKEN.balanceOf(address(GHO_GSM)), 0);
 
@@ -245,7 +242,7 @@ contract TestGsmV2 is Test, Events {
   }
 
   function testConstructor() public {
-    GsmV2 gsm = new GsmV2(
+    GsmAtoken gsm = new GsmAtoken(
       address(GHO_TOKEN),
       address(USDC_TOKEN),
       USDC_ATOKEN,
@@ -267,7 +264,7 @@ contract TestGsmV2 is Test, Events {
   function testRevertConstructorInvalidPriceStrategy() public {
     FixedPriceStrategy newPriceStrategy = new FixedPriceStrategy(1e18, address(GHO_TOKEN), 18);
     vm.expectRevert('INVALID_PRICE_STRATEGY');
-    new GsmV2(
+    new GsmAtoken(
       address(GHO_TOKEN),
       address(USDC_TOKEN),
       USDC_ATOKEN,
@@ -278,7 +275,7 @@ contract TestGsmV2 is Test, Events {
 
   function testRevertConstructorZeroAddressParams() public {
     vm.expectRevert('ZERO_ADDRESS_NOT_VALID');
-    new GsmV2(
+    new GsmAtoken(
       address(0),
       address(USDC_TOKEN),
       USDC_ATOKEN,
@@ -287,7 +284,7 @@ contract TestGsmV2 is Test, Events {
     );
 
     vm.expectRevert('ZERO_ADDRESS_NOT_VALID');
-    new GsmV2(
+    new GsmAtoken(
       address(GHO_TOKEN),
       address(0),
       USDC_ATOKEN,
@@ -296,7 +293,7 @@ contract TestGsmV2 is Test, Events {
     );
 
     vm.expectRevert('ZERO_ADDRESS_NOT_VALID');
-    new GsmV2(
+    new GsmAtoken(
       address(GHO_TOKEN),
       address(USDC_TOKEN),
       address(0),
@@ -305,7 +302,7 @@ contract TestGsmV2 is Test, Events {
     );
 
     vm.expectRevert('ZERO_ADDRESS_NOT_VALID');
-    new GsmV2(
+    new GsmAtoken(
       address(GHO_TOKEN),
       address(USDC_TOKEN),
       USDC_ATOKEN,
@@ -315,7 +312,7 @@ contract TestGsmV2 is Test, Events {
   }
 
   function testInitialize() public {
-    GsmV2 gsm = new GsmV2(
+    GsmAtoken gsm = new GsmAtoken(
       address(GHO_TOKEN),
       address(USDC_TOKEN),
       USDC_ATOKEN,
@@ -335,7 +332,7 @@ contract TestGsmV2 is Test, Events {
   }
 
   function testRevertInitializeZeroAdmin() public {
-    GsmV2 gsm = new GsmV2(
+    GsmAtoken gsm = new GsmAtoken(
       address(GHO_TOKEN),
       address(USDC_TOKEN),
       USDC_ATOKEN,
@@ -347,7 +344,7 @@ contract TestGsmV2 is Test, Events {
   }
 
   function testRevertInitializeTwice() public {
-    GsmV2 gsm = new GsmV2(
+    GsmAtoken gsm = new GsmAtoken(
       address(GHO_TOKEN),
       address(USDC_TOKEN),
       USDC_ATOKEN,
@@ -663,7 +660,7 @@ contract TestGsmV2 is Test, Events {
   }
 
   function testRevertSellAssetNoBucketCap() public {
-    GsmV2 gsm = new GsmV2(
+    GsmAtoken gsm = new GsmAtoken(
       address(GHO_TOKEN),
       address(USDC_TOKEN),
       USDC_ATOKEN,
@@ -685,7 +682,7 @@ contract TestGsmV2 is Test, Events {
   }
 
   function testRevertSellAssetTooMuchUnderlyingExposure() public {
-    GsmV2 gsm = new GsmV2(
+    GsmAtoken gsm = new GsmAtoken(
       address(GHO_TOKEN),
       address(USDC_TOKEN),
       USDC_ATOKEN,
@@ -1452,7 +1449,7 @@ contract TestGsmV2 is Test, Events {
   }
 
   function testRevertInitializeTreasuryZeroAddress() public {
-    GsmV2 gsm = new GsmV2(
+    GsmAtoken gsm = new GsmAtoken(
       address(GHO_TOKEN),
       address(USDC_TOKEN),
       USDC_ATOKEN,
@@ -1978,7 +1975,7 @@ contract TestGsmV2 is Test, Events {
   }
 
   function _sellAsset(
-    GsmV2 gsm,
+    GsmAtoken gsm,
     IERC20 token,
     address receiver,
     uint256 amount
@@ -1992,7 +1989,7 @@ contract TestGsmV2 is Test, Events {
   }
 
   function _buyAsset(
-    GsmV2 gsm,
+    GsmAtoken gsm,
     IERC20 token,
     address receiver,
     uint256 amount

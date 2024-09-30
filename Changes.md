@@ -28,13 +28,123 @@ A Harvester role could be added to restrict who can call `distributeYieldToTreas
 
 To reduce new storage footprint, the underlying Atoken address could be fetched from pool config dinamically.
 
-### Changes
+## Changes
 
-All modifications to the original Gsm implementation are between `/// NEW` and `/// END NEW` blocks.
+## Gsm.sol
 
-GSM diff: https://www.diffchecker.com/NPZQTJKj/
+In order to allow the full functionality of the new GSM, some changes had to be made to the old GSM. 
 
-Test diff: https://www.diffchecker.com/4eIOqZ6H/
+The two more important changes are the adition of the `_afterBuy` & the `_afterSell` functions that hook into `_buyAsset` & `_sellAsset` respectively. 
+
+Some minor modifications were made to some functions to add the keyword virtual so they could be overloaded in our new implementation.
+
+GSM diff: https://www.diffchecker.com/teXc7kLM/
+
+**New Functions**:
+
+```Solidity
+  /**
+   * @dev Hook that is called after `buyAsset`.
+   * @dev This can be used to add custom logic
+   * @param originator Originator of the request
+   * @param amount The amount of the underlying asset desired for purchase
+   * @param receiver Recipient address of the underlying asset being purchased
+   */
+  function _afterBuyAsset(address originator, uint256 amount, address receiver) internal virtual {}
+
+  /**
+   * @dev Hook that is called after `sellAsset`.
+   * @dev This can be used to add custom logic
+   * @param originator Originator of the request
+   * @param amount The amount of the underlying asset desired to sell
+   * @param receiver Recipient address of the GHO being purchased
+   */
+  function _afterSellAsset(
+    address originator,
+    uint256 amount,
+    address receiver
+  ) internal virtual {}
+
+```
+
+**Existing function modifications**:
+
+Changes are highlighted with a block of ////////
+
+```Solidity
+  function _buyAsset(
+    address originator,
+    uint256 minAmount,
+    address receiver
+  ) internal returns (uint256, uint256) {
+    (
+      uint256 assetAmount,
+      uint256 ghoSold,
+      uint256 grossAmount,
+      uint256 fee
+    ) = _calculateGhoAmountForBuyAsset(minAmount);
+
+    _beforeBuyAsset(originator, assetAmount, receiver);
+
+    require(assetAmount > 0, 'INVALID_AMOUNT');
+    require(_currentExposure >= assetAmount, 'INSUFFICIENT_AVAILABLE_EXOGENOUS_ASSET_LIQUIDITY');
+
+    _currentExposure -= uint128(assetAmount);
+    _accruedFees += fee.toUint128();
+    IGhoToken(GHO_TOKEN).transferFrom(originator, address(this), ghoSold);
+    IGhoToken(GHO_TOKEN).burn(grossAmount);
+    IERC20(UNDERLYING_ASSET).safeTransfer(receiver, assetAmount);
+
+    ////////////////////////
+    _afterBuyAsset(originator, assetAmount, receiver);
+    ////////////////////////
+
+    emit BuyAsset(originator, receiver, assetAmount, ghoSold, fee);
+    return (assetAmount, ghoSold);
+  }
+
+  function _sellAsset(
+    address originator,
+    uint256 maxAmount,
+    address receiver
+  ) internal returns (uint256, uint256) {
+    (
+      uint256 assetAmount,
+      uint256 ghoBought,
+      uint256 grossAmount,
+      uint256 fee
+    ) = _calculateGhoAmountForSellAsset(maxAmount);
+
+    _beforeSellAsset(originator, assetAmount, receiver);
+
+    require(assetAmount > 0, 'INVALID_AMOUNT');
+    require(_currentExposure + assetAmount <= _exposureCap, 'EXOGENOUS_ASSET_EXPOSURE_TOO_HIGH');
+
+    _currentExposure += uint128(assetAmount);
+    _accruedFees += fee.toUint128();
+    IERC20(UNDERLYING_ASSET).safeTransferFrom(originator, address(this), assetAmount);
+
+    IGhoToken(GHO_TOKEN).mint(address(this), grossAmount);
+    IGhoToken(GHO_TOKEN).transfer(receiver, ghoBought);
+
+    ////////////////////////
+    _afterSellAsset(originator, assetAmount, receiver);
+    ////////////////////////
+
+    emit SellAsset(originator, receiver, assetAmount, grossAmount, fee);
+    return (assetAmount, ghoBought);
+  }
+```
+
+
+
+**Virtual was added to the following functions**:
+
+- `initialize`
+- `rescueTokens`
+- `seize`
+
+## GsmAtoken.sol
 
 ### Storage variables
 
@@ -118,20 +228,26 @@ We bump the version number from `1` to `2`.
 return 2;
 ```
 
-**\_buyAsset**:
+**\_beforeBuyAsset**:
 
-In this function we add a single line of code to withdraw the necessary underlying from the Pool before we transfer the underlying to the user.
+In this function the contract withdraws necessary underlying from the Pool before transfering the underlying to the user.
 
 ```Solidity
-    IPool(POOL).withdraw(UNDERLYING_ASSET, assetAmount, address(this));
+  function _beforeBuyAsset(address, uint256 amount, address) internal override {
+    /// the check bellow is made in the main _buyAsset function, but is needed here anyway
+    require(amount > 0, 'INVALID_AMOUNT');
+    IPool(POOL).withdraw(UNDERLYING_ASSET, amount, address(this));
+  }
 ```
 
-**\_sellAsset**:
+**\_afterSellAsset**:
 
-In this function we query the current underlying balance of the GSM and deposit all underlying into the pool.
+In this function we deposit the underlying into the Aave pool.
 
 ```Solidity
-    IPool(POOL).deposit(UNDERLYING_ASSET, underlyingBalance, address(this), 0);
+  function _afterSellAsset(address, uint256 amount, address) internal override {
+    IPool(POOL).deposit(UNDERLYING_ASSET, amount, address(this), 0);
+  }
 ```
 
 ### New functions
@@ -152,7 +268,7 @@ This function allows the treasury to collect the yield generated from the aToken
     }
 ```
 
-We leave 1 aUSDC in the contract to make sure no rounding errors occur if a swap is made immediately after the yield gets distributed.
+We leave 1 aUSDC in the contract to make sure no rounding errors occur if swaps are made in the same block as the yield gets distributed.
 
 ## Security Considerations
 
@@ -165,3 +281,5 @@ Tests are still incomplete, but we have ported 100% of the existing GSM tests to
 On our test setup we (1) fork mainnet, (2) deploy the new implementation, (3) upgrade the current GSM to the new version.
 
 We also included some simple tests to cover the newly added functionality.
+
+Test diff: https://www.diffchecker.com/PQwqikzq/
