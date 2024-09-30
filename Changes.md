@@ -34,7 +34,7 @@ To reduce new storage footprint, the underlying Atoken address could be fetched 
 
 In order to allow the full functionality of the new GSM, some changes had to be made to the old GSM. 
 
-The two more important changes are the adition of the `_afterBuy` & the `_afterSell` functions that hook into `_buyAsset` & `_sellAsset` respectively. 
+The two more important changes are the addition of the `_afterBuy` & the `_afterSell` functions that hook into `_buyAsset` & `_sellAsset` respectively. These changes are needed to allow the new version to deposit the underlying into the Aave pool **after** the contract receives the underlying.
 
 Some minor modifications were made to some functions to add the keyword virtual so they could be overloaded in our new implementation.
 
@@ -148,7 +148,7 @@ Changes are highlighted with a block of ////////
 
 ### Storage variables
 
-Two new storage variables are added in this implementation. Both aditions are pretty much self-explanatory.
+Two new storage variables are added in this implementation. Both additions are pretty much self-explanatory.
 
 ```Solidity
   address public immutable UNDERLYING_ATOKEN;
