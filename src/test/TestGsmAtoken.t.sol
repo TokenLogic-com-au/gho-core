@@ -363,6 +363,8 @@ contract TestGsmAtoken is Test, Events {
   // }
 
   function testSellAssetZeroFee() public {
+    /// sends 1e6 ATOKEN to the underlying 4626 GSM, not the new adapter
+    simulateAusdcYield(1e6);
     vm.expectEmit(true, true, false, true, address(ATOKEN_GSM));
     emit FeeStrategyUpdated(address(GHO_GSM_FIXED_FEE_STRATEGY), address(0));
     ATOKEN_GSM.updateFeeStrategy(address(0));
@@ -370,7 +372,6 @@ contract TestGsmAtoken is Test, Events {
     uint256 aUsdcBalanceBefore = IERC20(USDC_ATOKEN).balanceOf(address(ATOKEN_GSM));
     uint256 sharesAmount = StaticAtoken(ATOKEN_GSM.UNDERLYING_ASSET()).previewDeposit(DEFAULT_GSM_USDC_AMOUNT);
     uint256 sharesAmountInGho = GHO_GSM_4626_FIXED_PRICE_STRATEGY.getAssetPriceInGho(sharesAmount, false);
-
     mintUsdc(ALICE, DEFAULT_GSM_USDC_AMOUNT);
 
     vm.startPrank(ALICE);
@@ -381,13 +382,20 @@ contract TestGsmAtoken is Test, Events {
     vm.stopPrank();
 
     uint256 aUsdcBalanceAfter = IERC20(USDC_ATOKEN).balanceOf(address(ATOKEN_GSM));
-    assertEq(USDC_TOKEN.balanceOf(address(GHO_GSM)), 0);
-    assertEq(IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM)), 0);
+
     assertEq(ghoBought, sharesAmountInGho, 'Unexpected GHO amount bought');
     assertEq(assetAmount, sharesAmount, 'Unexpected asset amount sold');
-    assertEq(USDC_TOKEN.balanceOf(ALICE), 0, 'Unexpected Alice final USDC balance');
     assertEq(aUsdcBalanceAfter, aUsdcBalanceBefore + sharesAmount);
+
+    assertEq(USDC_TOKEN.balanceOf(address(GHO_GSM)), 0);
+    assertEq(USDC_TOKEN.balanceOf(address(ATOKEN_GSM)), 0);
+    assertEq(USDC_TOKEN.balanceOf(ALICE), 0, 'Unexpected Alice final USDC balance');
+
+    assertEq(IERC20(USDC_ATOKEN).balanceOf(address(GHO_GSM)), 0);
+    assertEq(IERC20(USDC_ATOKEN).balanceOf(address(ATOKEN_GSM)), 1e6 + sharesAmount);
+
     assertEq(GHO_TOKEN.balanceOf(ALICE), DEFAULT_GSM_GHO_AMOUNT, 'Unexpected final GHO balance');
+
     assertEq(GHO_GSM.getExposureCap(), DEFAULT_GSM_USDC_EXPOSURE, 'Unexpected exposure capacity');
   }
 
@@ -2033,7 +2041,7 @@ contract TestGsmAtoken is Test, Events {
   }
 
   function simulateAusdcYield(uint256 amount) internal {
-    vm.prank(0xA91661efEe567b353D55948C0f051C1A16E503A5);
-    IERC20(USDC_ATOKEN).transfer(address(GHO_GSM), amount);
+    vm.prank(0x8EA2A9764fA673D790e8AcC7DCb7f8532854271c);
+    IERC20(USDC_ATOKEN).transfer(address(ATOKEN_GSM), amount);
   }
 }
