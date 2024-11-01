@@ -112,7 +112,7 @@ contract Gsm is AccessControl, VersionedInitializable, EIP712, IGsm {
     address admin,
     address ghoTreasury,
     uint128 exposureCap
-  ) external initializer {
+  ) external virtual initializer {
     require(admin != address(0), 'ZERO_ADDRESS_NOT_VALID');
     _grantRole(DEFAULT_ADMIN_ROLE, admin);
     _grantRole(CONFIGURATOR_ROLE, admin);
@@ -191,7 +191,7 @@ contract Gsm is AccessControl, VersionedInitializable, EIP712, IGsm {
     address token,
     address to,
     uint256 amount
-  ) external onlyRole(TOKEN_RESCUER_ROLE) {
+  ) external virtual onlyRole(TOKEN_RESCUER_ROLE) {
     require(amount > 0, 'INVALID_AMOUNT');
     if (token == GHO_TOKEN) {
       uint256 rescuableBalance = IERC20(token).balanceOf(address(this)) - _accruedFees;
@@ -217,7 +217,7 @@ contract Gsm is AccessControl, VersionedInitializable, EIP712, IGsm {
   }
 
   /// @inheritdoc IGsm
-  function seize() external notSeized onlyRole(LIQUIDATOR_ROLE) returns (uint256) {
+  function seize() external virtual notSeized onlyRole(LIQUIDATOR_ROLE) returns (uint256) {
     _isSeized = true;
     _currentExposure = 0;
     _updateExposureCap(0);
@@ -409,6 +409,8 @@ contract Gsm is AccessControl, VersionedInitializable, EIP712, IGsm {
     IGhoToken(GHO_TOKEN).burn(grossAmount);
     IERC20(UNDERLYING_ASSET).safeTransfer(receiver, assetAmount);
 
+    _afterBuyAsset(originator, assetAmount, receiver);
+
     emit BuyAsset(originator, receiver, assetAmount, ghoSold, fee);
     return (assetAmount, ghoSold);
   }
@@ -421,6 +423,15 @@ contract Gsm is AccessControl, VersionedInitializable, EIP712, IGsm {
    * @param receiver Recipient address of the underlying asset being purchased
    */
   function _beforeBuyAsset(address originator, uint256 amount, address receiver) internal virtual {}
+
+  /**
+   * @dev Hook that is called after `buyAsset`.
+   * @dev This can be used to add custom logic
+   * @param originator Originator of the request
+   * @param amount The amount of the underlying asset desired for purchase
+   * @param receiver Recipient address of the underlying asset being purchased
+   */
+  function _afterBuyAsset(address originator, uint256 amount, address receiver) internal virtual {}
 
   /**
    * @dev Sells an underlying asset for GHO
@@ -454,6 +465,8 @@ contract Gsm is AccessControl, VersionedInitializable, EIP712, IGsm {
     IGhoToken(GHO_TOKEN).mint(address(this), grossAmount);
     IGhoToken(GHO_TOKEN).transfer(receiver, ghoBought);
 
+    _afterSellAsset(originator, assetAmount, receiver);
+
     emit SellAsset(originator, receiver, assetAmount, grossAmount, fee);
     return (assetAmount, ghoBought);
   }
@@ -466,6 +479,19 @@ contract Gsm is AccessControl, VersionedInitializable, EIP712, IGsm {
    * @param receiver Recipient address of the GHO being purchased
    */
   function _beforeSellAsset(
+    address originator,
+    uint256 amount,
+    address receiver
+  ) internal virtual {}
+
+  /**
+   * @dev Hook that is called after `sellAsset`.
+   * @dev This can be used to add custom logic
+   * @param originator Originator of the request
+   * @param amount The amount of the underlying asset desired to sell
+   * @param receiver Recipient address of the GHO being purchased
+   */
+  function _afterSellAsset(
     address originator,
     uint256 amount,
     address receiver
