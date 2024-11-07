@@ -183,16 +183,9 @@ We introduce two new constructor params in this new version to assign the new st
 
 To allow the GSM to deposit and withdraw from the pool at will, we add two maximum approvals to both the underlying token and the respective Atoken. These approvals could be made on the fly before deposit/withdraw to prevent hanging approvals.
 
-We also include the migration of the underlying to the aToken.
-
 ```Solidity
     IERC20(UNDERLYING_ATOKEN).approve(POOL, type(uint256).max);
-    IERC20 underlying = IERC20(UNDERLYING_ASSET);
-    underlying.approve(POOL, type(uint256).max);
-    uint256 underlyingBalance = underlying.balanceOf(address(this));
-    if (underlyingBalance > 0) {
-      IPool(POOL).deposit(address(underlying), underlyingBalance, address(this), 0);
-    }
+    IERC20(UNDERLYING_ASSET).approve(POOL, type(uint256).max);
 ```
 
 **rescueTokens**:
@@ -276,13 +269,13 @@ When updating from the previous version of the GSM, it's recommended to atomical
 
 ## Tests
 
-Tests are still incomplete, but we have ported 100% of the existing GSM tests to target our new GSM version with minimal changes.
+Tests are complete, we have ported 100% of the existing GSM tests to target our new GSM version with minimal changes.
 
-On our test setup we (1) fork mainnet, (2) deploy the new implementation, (3) upgrade the current GSM to the new version.
+On our test setup we (1) fork mainnet, (2) deploy the new implementation.
 
 We also included some simple tests to cover the newly added functionality.
 
-Test diff: https://www.diffchecker.com/PQwqikzq/
+Test diff: https://www.diffchecker.com/vnlC0Oxe/
 
 
 ## 4626 Considerations

@@ -43,12 +43,7 @@ contract GsmAtoken is Gsm {
     _updateExposureCap(exposureCap);
 
     IERC20(UNDERLYING_ATOKEN).approve(POOL, type(uint256).max);
-    IERC20 underlying = IERC20(UNDERLYING_ASSET);
-    underlying.approve(POOL, type(uint256).max);
-    uint256 underlyingBalance = underlying.balanceOf(address(this));
-    if (underlyingBalance > 0) {
-      IPool(POOL).deposit(address(underlying), underlyingBalance, address(this), 0);
-    }
+    IERC20(UNDERLYING_ASSET).approve(POOL, type(uint256).max);
   }
 
   function rescueTokens(
