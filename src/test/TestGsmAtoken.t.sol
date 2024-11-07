@@ -20,10 +20,11 @@ import {GsmAtoken} from '../contracts/facilitators/gsm/GsmAtoken.sol';
 import {Gsm} from '../contracts/facilitators/gsm/Gsm.sol';
 import {GhoToken} from '../contracts/gho/GhoToken.sol';
 import {Events} from './helpers/Events.sol';
+import {Constants} from './helpers/Constants.sol';
 
 
 /// to run this test: forge test --match-path src/test/TestGsmAtoken.t.sol -vv
-contract TestGsmAtoken is Test, Events {
+contract TestGsmAtoken is Test, Events, Constants {
   using PercentageMath for uint256;
   using PercentageMath for uint128;
 
@@ -42,37 +43,7 @@ contract TestGsmAtoken is Test, Events {
   GhoToken internal GHO_TOKEN = GhoToken(AaveV3EthereumAssets.GHO_UNDERLYING);
   address internal USDC_ATOKEN = AaveV3EthereumAssets.USDC_A_TOKEN;
   address internal POOL = address(AaveV3Ethereum.POOL);
-  address internal TREASURY = address(AaveV3Ethereum.COLLECTOR);
 
-  /// taken from Constants.sol
-  bytes32 internal constant DEFAULT_ADMIN_ROLE = bytes32(0);
-  bytes32 internal constant GHO_TOKEN_BUCKET_MANAGER_ROLE = keccak256('BUCKET_MANAGER_ROLE');
-  bytes32 internal constant GSM_CONFIGURATOR_ROLE = keccak256('CONFIGURATOR_ROLE');
-  bytes32 internal constant GSM_TOKEN_RESCUER_ROLE = keccak256('TOKEN_RESCUER_ROLE');
-  bytes32 internal constant GSM_SWAP_FREEZER_ROLE = keccak256('SWAP_FREEZER_ROLE');
-  bytes32 internal constant GSM_LIQUIDATOR_ROLE = keccak256('LIQUIDATOR_ROLE');
-  bytes32 internal constant GHO_TOKEN_FACILITATOR_MANAGER_ROLE =
-    keccak256('FACILITATOR_MANAGER_ROLE');
-  uint256 internal constant DEFAULT_FIXED_PRICE = 1e18;
-  uint128 internal constant DEFAULT_GSM_USDC_EXPOSURE = 100_000_000e6;
-  uint128 internal constant DEFAULT_GSM_USDC_AMOUNT = 100e6;
-  uint128 internal constant DEFAULT_GSM_GHO_AMOUNT = 100e18;
-  uint256 internal constant DEFAULT_GSM_SELL_FEE = 0.1e4; // 10%
-  uint256 internal constant DEFAULT_GSM_BUY_FEE = 0.1e4; // 10%
-  uint128 internal constant DEFAULT_CAPACITY = 100_000_000e18;
-  address internal constant ALICE = address(0x1111);
-  address internal constant BOB = address(0x1112);
-  address internal constant CHARLES = address(0x1113);
-
-  // signature typehash for GSM
-  bytes32 internal constant GSM_BUY_ASSET_WITH_SIG_TYPEHASH =
-    keccak256(
-      'BuyAssetWithSig(address originator,uint256 minAmount,address receiver,uint256 nonce,uint256 deadline)'
-    );
-  bytes32 internal constant GSM_SELL_ASSET_WITH_SIG_TYPEHASH =
-    keccak256(
-      'SellAssetWithSig(address originator,uint256 maxAmount,address receiver,uint256 nonce,uint256 deadline)'
-    );
 
   function setUp() public {
     vm.createSelectFork(vm.rpcUrl('mainnet'), 20814911);
@@ -1382,7 +1353,6 @@ contract TestGsmAtoken is Test, Events {
   function testSeize() public {
     assertEq(GHO_GSM.getIsSeized(), false, 'Unexpected seize status before');
 
-    uint256 treasuryBalanceBefore = IERC20(USDC_ATOKEN).balanceOf(TREASURY);
 
     mintUsdc(ALICE, DEFAULT_GSM_USDC_AMOUNT);
 
@@ -1391,8 +1361,7 @@ contract TestGsmAtoken is Test, Events {
     GHO_GSM.sellAsset(DEFAULT_GSM_USDC_AMOUNT, ALICE);
     vm.stopPrank();
     
-    // we use real aave treasury here so this assertion doesnt make sense
-    // assertEq(USDC_TOKEN.balanceOf(TREASURY), 0, 'Unexpected USDC before token balance');
+    assertEq(USDC_TOKEN.balanceOf(TREASURY), 0, 'Unexpected USDC before token balance');
     vm.prank(address(GHO_GSM_LAST_RESORT_LIQUIDATOR));
     vm.expectEmit(true, false, false, true, address(GHO_GSM));
     emit Seized(
@@ -1407,7 +1376,7 @@ contract TestGsmAtoken is Test, Events {
     assertEq(seizedAmount, DEFAULT_GSM_USDC_AMOUNT, 'Unexpected seized amount');
     assertEq(
       IERC20(USDC_ATOKEN).balanceOf(TREASURY),
-      treasuryBalanceBefore + DEFAULT_GSM_USDC_AMOUNT,
+      DEFAULT_GSM_USDC_AMOUNT,
       'Unexpected USDC after token balance'
     );
     assertEq(GHO_GSM.getAvailableLiquidity(), 0, 'Unexpected available liquidity');
@@ -1517,8 +1486,6 @@ contract TestGsmAtoken is Test, Events {
   function testDistributeFeesToTreasury() public {
     uint256 fee = DEFAULT_GSM_GHO_AMOUNT.percentMul(DEFAULT_GSM_SELL_FEE);
 
-    uint256 treasuryBalanceBefore = GHO_TOKEN.balanceOf(address(TREASURY));
-
     mintUsdc(ALICE, DEFAULT_GSM_USDC_AMOUNT);
 
     vm.startPrank(ALICE);
@@ -1542,7 +1509,7 @@ contract TestGsmAtoken is Test, Events {
       0,
       'Unexpected GSM GHO balance post-distribution'
     );
-    assertEq(GHO_TOKEN.balanceOf(TREASURY), treasuryBalanceBefore + fee, 'Unexpected GHO balance in treasury');
+    assertEq(GHO_TOKEN.balanceOf(TREASURY), fee, 'Unexpected GHO balance in treasury');
     assertEq(GHO_GSM.getAccruedFees(), 0, 'Unexpected GSM accrued fees');
   }
 
